@@ -1,15 +1,59 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/whiteboard_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     tools:context=".ui.WhiteboardFragment">
 
+    <androidx.appcompat.widget.Toolbar
+        android:id="@+id/whiteboard_toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="#FFF" 
+        android:elevation="4dp"
+        android:theme="@style/ThemeOverlay.AppCompat.ActionBar"
+        app:popupTheme="@style/ThemeOverlay.AppCompat.Light"
+        app:navigationIcon="@android:drawable/ic_menu_close_clear_cancel">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_gravity="center"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/action_undo_centered"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:src="@drawable/ic_undo"
+                android:background="?android:attr/selectableItemBackground"
+                android:contentDescription="Undo"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"/>
+
+            <ImageButton
+                android:id="@+id/action_redo_centered"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:src="@drawable/ic_undo"
+                android:rotation="360"
+                android:scaleX="-1"
+                android:background="?android:attr/selectableItemBackground"
+                android:contentDescription="Redo"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"/>
+
+        </LinearLayout>
+
+    </androidx.appcompat.widget.Toolbar>
+
     <com.starmaurya.whiteboard.views.WhiteboardView
         android:id="@+id/whiteboardView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:layout_below="@id/whiteboard_toolbar"
         android:background="#FFFFFF" />
 
-</FrameLayout>
+</RelativeLayout>
