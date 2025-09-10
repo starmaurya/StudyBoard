@@ -15,7 +15,7 @@
         android:elevation="4dp"
         android:theme="@style/ThemeOverlay.AppCompat.ActionBar"
         app:popupTheme="@style/ThemeOverlay.AppCompat.Light"
-        app:navigationIcon="@android:drawable/ic_menu_close_clear_cancel">
+        app:navigationIcon="@drawable/back">
 
         <LinearLayout
             android:layout_width="wrap_content"
@@ -27,23 +27,23 @@
                 android:id="@+id/action_undo_centered"
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
-                android:src="@drawable/ic_undo"
+                android:src="@drawable/undo"
                 android:background="?android:attr/selectableItemBackground"
                 android:contentDescription="Undo"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp"/>
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="10dp"/>
 
             <ImageButton
                 android:id="@+id/action_redo_centered"
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
-                android:src="@drawable/ic_undo"
+                android:src="@drawable/undo"
                 android:rotation="360"
                 android:scaleX="-1"
                 android:background="?android:attr/selectableItemBackground"
                 android:contentDescription="Redo"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp"/>
+                android:layout_marginStart="10dp"
+                android:layout_marginEnd="8dp"/>
 
         </LinearLayout>
 
@@ -56,4 +56,83 @@
         android:layout_below="@id/whiteboard_toolbar"
         android:background="#FFFFFF" />
 
+    <!-- Fixed horizontal toolbar at bottom -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/menu_layout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_alignParentBottom="true"
+        android:gravity="center"
+        android:background="#edf4fb">
+
+        <!-- Example tool button -->
+        <ImageButton
+            android:id="@+id/btn_pen"
+            android:layout_width="81dp"
+            android:layout_height="72dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Pen"
+            android:scaleType="centerInside"
+            android:src="@drawable/pen"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="@+id/btn_brush"
+            app:layout_constraintHorizontal_bias="0.5"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <ImageButton
+            android:id="@+id/btn_brush"
+            android:layout_width="81dp"
+            android:layout_height="72dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Brush"
+            android:scaleType="center"
+            android:src="@drawable/brush"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="@+id/btn_eraser"
+            app:layout_constraintHorizontal_bias="0.5"
+            app:layout_constraintStart_toEndOf="@+id/btn_pen"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <!-- Eraser -->
+        <ImageButton
+            android:id="@+id/btn_eraser"
+            android:layout_width="81dp"
+            android:layout_height="72dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Eraser"
+            android:src="@drawable/eraser"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="@+id/btn_shapes"
+            app:layout_constraintHorizontal_bias="0.5"
+            app:layout_constraintStart_toEndOf="@+id/btn_brush"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <ImageButton
+            android:id="@+id/btn_shapes"
+            android:layout_width="81dp"
+            android:layout_height="72dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Undo"
+            android:src="@drawable/shapes"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="@+id/btn_text"
+            app:layout_constraintHorizontal_bias="0.5"
+            app:layout_constraintStart_toEndOf="@+id/btn_eraser"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <ImageButton
+            android:id="@+id/btn_text"
+            android:layout_width="81dp"
+            android:layout_height="72dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Redo"
+            android:src="@drawable/text"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintHorizontal_bias="0.5"
+            app:layout_constraintStart_toEndOf="@+id/btn_shapes"
+            app:layout_constraintTop_toTopOf="parent" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
 </RelativeLayout>

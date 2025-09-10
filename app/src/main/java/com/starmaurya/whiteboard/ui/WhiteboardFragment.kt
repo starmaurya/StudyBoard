@@ -8,15 +8,19 @@ import android.view.MenuInflater
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import android.widget.ImageButton
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
+import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.starmaurya.whiteboard.R
 import com.starmaurya.whiteboard.views.WhiteboardView
 
 class WhiteboardFragment : Fragment() {
 
     private var whiteboardView: WhiteboardView? = null
+    private var menuOpen = false
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -30,6 +34,12 @@ class WhiteboardFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        val btnPen  = view.findViewById<ImageButton>(R.id.btn_pen)
+        val btnBrush  = view.findViewById<ImageButton>(R.id.btn_brush)
+        val btnEraser  = view.findViewById<ImageButton>(R.id.btn_eraser)
+        val btnShapes  = view.findViewById<ImageButton>(R.id.btn_shapes)
+        val btnText  = view.findViewById<ImageButton>(R.id.btn_text)
 
         val toolbar = view.findViewById<Toolbar>(R.id.whiteboard_toolbar)
         (activity as? AppCompatActivity)?.setSupportActionBar(toolbar)
@@ -47,7 +57,58 @@ class WhiteboardFragment : Fragment() {
             whiteboardView?.redo()
         }
 
+        btnPen.setOnClickListener {
+            showToast()
+        }
+
+        btnBrush.setOnClickListener {
+            showToast()
+        }
+
+        btnShapes.setOnClickListener {
+            showToast()
+        }
+
+        btnText.setOnClickListener {
+            showToast()
+        }
+
+        var isEraserMode = false
+        btnEraser.setOnClickListener {
+            if (!isEraserMode) {
+                isEraserMode = true
+                whiteboardView?.setEraser(true)
+            } else {
+                isEraserMode = false
+                whiteboardView?.setEraser(false)
+            }
+        }
+
         setHasOptionsMenu(true) // For the 'save' menu item
+    }
+
+    private fun showToast() {
+        Toast.makeText(requireContext(), "Coming Soon", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun toggleMenu(menu: View, mainFab: FloatingActionButton) {
+        if (menuOpen) collapseMenu(menu, mainFab) else expandMenu(menu, mainFab)
+    }
+
+    private fun expandMenu(menu: View, mainFab: FloatingActionButton) {
+        menu.visibility = View.VISIBLE
+        menu.scaleX = 0f; menu.scaleY = 0f
+        menu.animate().scaleX(1f).scaleY(1f).setDuration(200)
+            .setInterpolator(DecelerateInterpolator()).start()
+        mainFab.animate().rotation(45f).setDuration(200).start()
+        menuOpen = true
+    }
+
+    private fun collapseMenu(menu: View, mainFab: FloatingActionButton) {
+        menu.animate().scaleX(0f).scaleY(0f).setDuration(180)
+            .setInterpolator(DecelerateInterpolator()).withEndAction { menu.visibility = View.GONE }.start()
+        mainFab.animate().rotation(0f).setDuration(180).start()
+        menuOpen = false
     }
 
     override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {

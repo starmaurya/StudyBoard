@@ -1,9 +1,8 @@
 package com.starmaurya.whiteboard.views
 
-
-
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.util.AttributeSet
@@ -18,13 +17,15 @@ class WhiteboardView @JvmOverloads constructor(
 ) : View(context, attrs) {
 
     private val drawPaint = Paint().apply {
-        color = 0xFF000000.toInt()
+        color = 0xFF000000.toInt()   // default black pen
         style = Paint.Style.STROKE
         strokeWidth = 8f
         isAntiAlias = true
         strokeJoin = Paint.Join.ROUND
         strokeCap = Paint.Cap.ROUND
     }
+
+    private var isEraserMode = false
 
     // list of committed strokes
     private val strokes = ArrayList<Stroke>()
@@ -98,16 +99,16 @@ class WhiteboardView @JvmOverloads constructor(
         invalidate()
     }
 
-    // Optional helpers to change paint from outside (palette)
-    fun setStrokeColor(color: Int) {
-        drawPaint.color = color
+    // 👉 New: toggle eraser mode
+    fun setEraser(enabled: Boolean) {
+        isEraserMode = enabled
+        if (enabled) {
+            drawPaint.color = Color.WHITE           // background color = white
+            drawPaint.strokeWidth = 30f             // eraser thicker
+        } else {
+            drawPaint.color = Color.BLACK           // back to black pen
+            drawPaint.strokeWidth = 8f
+        }
     }
-
-    fun setStrokeWidth(widthPx: Float) {
-        drawPaint.strokeWidth = widthPx
-    }
-
-    // Optionally expose stroke count
-    fun strokeCount(): Int = strokes.size
 }
 
