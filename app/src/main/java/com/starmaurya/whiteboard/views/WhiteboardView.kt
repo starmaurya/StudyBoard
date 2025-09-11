@@ -1,16 +1,38 @@
 package com.starmaurya.whiteboard.views
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PathMeasure
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
+import java.io.File
+import java.io.FileOutputStream
+import java.io.OutputStream
+import androidx.core.graphics.createBitmap
+import com.google.gson.Gson
+import com.google.gson.GsonBuilder
 
 // Simple container for a committed stroke
 data class Stroke(val path: Path, val paint: Paint)
+
+// Serializable model for JSON
+data class SerializablePoint(val x: Float, val y: Float)
+data class SerializableStroke(
+    val points: List<SerializablePoint>,
+    val color: Int,
+    val strokeWidth: Float
+)
+
+data class BoardPayload(
+    val strokes: List<SerializableStroke>,
+    val width: Int,
+    val height: Int
+)
 
 class WhiteboardView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
@@ -74,6 +96,48 @@ class WhiteboardView @JvmOverloads constructor(
         return true
     }
 
+    // Add this function inside your WhiteboardView class
+    fun exportDrawingAsJsonString(pretty: Boolean = true, stepPx: Float = 5f): String? {
+        return try {
+            // helper: sample Path into points at approx stepPx distance
+            fun samplePathPoints(path: Path, step: Float = stepPx): List<SerializablePoint> {
+                val result = ArrayList<SerializablePoint>()
+                val pm = PathMeasure(path, false)
+                val pos = FloatArray(2)
+                do {
+                    val len = pm.length
+                    if (len > 0f) {
+                        var distance = 0f
+                        while (distance <= len) {
+                            pm.getPosTan(distance, pos, null)
+                            result.add(SerializablePoint(pos[0], pos[1]))
+                            distance += step
+                        }
+                    }
+                } while (pm.nextContour())
+                return result
+            }
+
+            // map your internal strokes -> serializable strokes
+            val serialStrokes = strokes.map { s ->
+                val pts = samplePathPoints(s.path, stepPx)
+                SerializableStroke(points = pts, color = s.paint.color, strokeWidth = s.paint.strokeWidth)
+            }
+
+            val payload = BoardPayload(
+                strokes = serialStrokes,
+                width = measuredWidth.coerceAtLeast(1),
+                height = measuredHeight.coerceAtLeast(1)
+            )
+
+            val gson: Gson = if (pretty) GsonBuilder().setPrettyPrinting().create() else Gson()
+            gson.toJson(payload)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
     // Undo last committed stroke
     fun undo() {
         if (strokes.isNotEmpty()) {
@@ -112,3 +176,7 @@ class WhiteboardView @JvmOverloads constructor(
     }
 }
 
+//<a href="https://www.flaticon.com/free-icons/undo" title="undo icons">Undo icons created by Freepik - Flaticon</a>
+//<a href="https://www.flaticon.com/free-icons/previous" title="previous icons">Previous icons created by Any Icon - Flaticon</a>
+//<a href="https://www.flaticon.com/free-icons/save" title="save icons">Save icons created by Bharat Icons - Flaticon</a>
+//<a href="https://www.flaticon.com/free-icons/eraser" title="eraser icons">Eraser icons created by Freepik - Flaticon</a>
