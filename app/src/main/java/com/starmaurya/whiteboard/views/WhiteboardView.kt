@@ -20,6 +20,9 @@ import com.google.gson.GsonBuilder
 // Simple container for a committed stroke
 data class Stroke(val path: Path, val paint: Paint)
 
+// add near top with your other data classes
+data class TextItem(val x: Float, val y: Float, val text: String, val paint: Paint)
+
 // Serializable model for JSON
 data class SerializablePoint(val x: Float, val y: Float)
 data class SerializableStroke(
@@ -33,6 +36,12 @@ data class BoardPayload(
     val width: Int,
     val height: Int
 )
+
+private val textItems = ArrayList<TextItem>()
+private val undoneTextItems = ArrayList<TextItem>()
+
+// choose a default text size (px). Convert dp to px if you want device independent sizing.
+private var defaultTextSizePx = 48f
 
 class WhiteboardView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
@@ -61,6 +70,11 @@ class WhiteboardView @JvmOverloads constructor(
         // draw all committed strokes
         for (s in strokes) {
             canvas.drawPath(s.path, s.paint)
+        }
+
+        // draw committed text items
+        for (t in textItems) {
+            canvas.drawText(t.text, t.x, t.y, t.paint)
         }
 
         // draw the in-progress path on top
@@ -138,27 +152,83 @@ class WhiteboardView @JvmOverloads constructor(
         }
     }
 
-    // Undo last committed stroke
+    /**
+     * Adds text to the canvas.
+     * If x/y are null, text will be added approximately centered.
+     * The function commits the text (so it persists in saved JSON and PNG exports).
+     */
+    fun addText(text: String, x: Float? = null, y: Float? = null) {
+        if (text.isBlank()) return
+
+        // decide coordinates: either provided or center
+        val cx = x ?: (width / 2f)
+        // draw text baseline at vertical center (for simple placement we offset by text size)
+        val cy = y ?: (height / 2f) + defaultTextSizePx / 2f
+
+        // create a paint copy for text (we keep color same as drawPaint by default)
+        val p = Paint().apply {
+            isAntiAlias = true
+            style = Paint.Style.FILL
+            color = drawPaint.color
+            textSize = defaultTextSizePx
+        }
+
+        // commit
+        val t = TextItem(cx, cy, text, p)
+        textItems.add(t)
+        // clear redo stack for text when new action occurs
+        undoneTextItems.clear()
+
+        invalidate()
+    }
+
+    /** optional: set default text size (in px) */
+    fun setDefaultTextSizePx(px: Float) {
+        defaultTextSizePx = px
+    }
+
+    /** set default text color (will affect new text items) */
+    fun setDefaultTextColor(color: Int) {
+        drawPaint.color = color
+    }
+
+    /** undo: prefer strokes first (existing behavior), then text items */
     fun undo() {
         if (strokes.isNotEmpty()) {
             val stroke = strokes.removeAt(strokes.lastIndex)
             undoneStrokes.add(stroke)
             invalidate()
+            return
         }
-    }
-
-    fun redo() {
-        if (undoneStrokes.isNotEmpty()) {
-            val stroke = undoneStrokes.removeAt(undoneStrokes.lastIndex)
-            strokes.add(stroke)
+        // if no strokes, undo text
+        if (textItems.isNotEmpty()) {
+            val t = textItems.removeAt(textItems.lastIndex)
+            undoneTextItems.add(t)
             invalidate()
         }
     }
 
-    // Clear everything
+    /** redo: prefer text redo first (reverse of undo preference) */
+    fun redo() {
+        if (undoneTextItems.isNotEmpty()) {
+            val t = undoneTextItems.removeAt(undoneTextItems.lastIndex)
+            textItems.add(t)
+            invalidate()
+            return
+        }
+        if (undoneStrokes.isNotEmpty()) {
+            val s = undoneStrokes.removeAt(undoneStrokes.lastIndex)
+            strokes.add(s)
+            invalidate()
+        }
+    }
+
+    /** Clear everything: strokes + text */
     fun clearBoard() {
         strokes.clear()
         undoneStrokes.clear()
+        textItems.clear()
+        undoneTextItems.clear()
         currentPath.reset()
         invalidate()
     }

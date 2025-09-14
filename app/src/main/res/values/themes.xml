@@ -6,4 +6,12 @@
     </style>
 
     <style name="Theme.StudyBoard" parent="Base.Theme.StudyBoard" />
+
+    <!-- Splash Screen Theme -->
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@android:color/white</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_app_logo</item> 
+        <item name="windowSplashScreenAnimationDuration">1000</item>
+        <item name="postSplashScreenTheme">@style/Theme.StudyBoard</item>  <!-- Main app theme -->
+    </style>
 </resources>

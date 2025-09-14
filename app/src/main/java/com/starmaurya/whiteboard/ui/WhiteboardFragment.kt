@@ -88,7 +88,7 @@ class WhiteboardFragment : Fragment() {
         }
 
         btnText.setOnClickListener {
-            showToast()
+            onTextButtonClicked()
         }
 
         var isEraserMode = false
@@ -233,6 +233,30 @@ class WhiteboardFragment : Fragment() {
                 }
             }
         }
+    }
+
+    // when user clicks text button:
+    private fun onTextButtonClicked() {
+        val edit = EditText(requireContext()).apply {
+            hint = "Type text to add"
+            isSingleLine = false
+            minLines = 1
+            setText("") // empty by default
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("Add text")
+            .setView(edit)
+            .setPositiveButton("OK") { dlg, _ ->
+                val typed = edit.text.toString().trim()
+                if (typed.isNotEmpty()) {
+                    // we add at center — or you can detect a tap location and pass coords
+                    whiteboardView?.addText(typed, null, null)
+                }
+                dlg.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     // create a bitmap snapshot of the view (call on background thread)
