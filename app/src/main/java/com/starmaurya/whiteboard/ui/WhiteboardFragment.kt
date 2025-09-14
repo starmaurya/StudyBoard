@@ -1,12 +1,11 @@
 package com.starmaurya.whiteboard.ui
 
-import android.content.ContentValues
+
+import android.app.AlertDialog
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
-import android.provider.MediaStore
 import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuInflater
@@ -19,20 +18,24 @@ import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.annotation.RequiresApi
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.starmaurya.whiteboard.R
+import com.starmaurya.whiteboard.repository.MediaStoreFileRepository
+import com.starmaurya.whiteboard.viewmodels.SaveResult
+import com.starmaurya.whiteboard.viewmodels.WhiteboardViewModel
 import com.starmaurya.whiteboard.views.WhiteboardView
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
 
 class WhiteboardFragment : Fragment() {
 
@@ -44,6 +47,9 @@ class WhiteboardFragment : Fragment() {
     private lateinit var btnEraser: ImageButton
     private lateinit var btnShapes: ImageButton
     private lateinit var btnText: ImageButton
+
+    // ViewModel
+    private var whiteboardViewModel: WhiteboardViewModel? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -57,21 +63,25 @@ class WhiteboardFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // toolbar
+        // setup toolbar
         val toolbar = view.findViewById<Toolbar>(R.id.whiteboard_toolbar)
         (activity as? AppCompatActivity)?.setSupportActionBar(toolbar)
         (activity as? AppCompatActivity)?.supportActionBar?.setDisplayHomeAsUpEnabled(true)
         (activity as? AppCompatActivity)?.supportActionBar?.setDisplayShowTitleEnabled(false)
 
-        // undo/redo
-        view.findViewById<ImageButton>(R.id.action_undo_centered).setOnClickListener {
+        // undo / redo
+        val undoButton = view.findViewById<ImageButton>(R.id.action_undo_centered)
+        val redoButton = view.findViewById<ImageButton>(R.id.action_redo_centered)
+
+        undoButton.setOnClickListener {
             if (whiteboardView?.hasUndo() == true) {
                 whiteboardView?.undo()
             } else {
                 Toast.makeText(requireContext(), "No drawings to undo", Toast.LENGTH_SHORT).show()
             }
         }
-        view.findViewById<ImageButton>(R.id.action_redo_centered).setOnClickListener {
+
+        redoButton.setOnClickListener {
             if (whiteboardView?.hasRedo() == true) {
                 whiteboardView?.redo()
             } else {
@@ -79,41 +89,72 @@ class WhiteboardFragment : Fragment() {
             }
         }
 
-        // bottom tools
+        // bottom tool buttons
         btnPen = view.findViewById(R.id.btn_pen)
         btnBrush = view.findViewById(R.id.btn_brush)
         btnEraser = view.findViewById(R.id.btn_eraser)
         btnShapes = view.findViewById(R.id.btn_shapes)
         btnText = view.findViewById(R.id.btn_text)
 
-        // default mode = PEN (and highlight)
+        // default tool
         whiteboardView?.setToolMode(WhiteboardView.ToolMode.PEN)
         highlightTool(btnPen)
 
         btnPen.setOnClickListener {
             whiteboardView?.setToolMode(WhiteboardView.ToolMode.PEN)
             highlightTool(btnPen)
+            Toast.makeText(requireContext(), "Pen", Toast.LENGTH_SHORT).show()
         }
 
         btnBrush.setOnClickListener {
-            showToast()
+            whiteboardView?.setToolMode(WhiteboardView.ToolMode.SHAPE)
+            highlightTool(btnBrush)
+            Toast.makeText(requireContext(), "Square (drag to size)", Toast.LENGTH_SHORT).show()
         }
 
         btnEraser.setOnClickListener {
             whiteboardView?.setToolMode(WhiteboardView.ToolMode.ERASER)
             highlightTool(btnEraser)
+            Toast.makeText(requireContext(), "Eraser", Toast.LENGTH_SHORT).show()
         }
 
         btnShapes.setOnClickListener {
-            // keep highlight as current tool (don't switch)
-            whiteboardView?.setToolMode(WhiteboardView.ToolMode.SHAPE)
-            highlightTool(btnBrush)
+            // placeholder: open shapes picker later
+            Toast.makeText(requireContext(), "Shapes panel coming soon", Toast.LENGTH_SHORT).show()
         }
 
         btnText.setOnClickListener {
             whiteboardView?.setToolMode(WhiteboardView.ToolMode.TEXT)
             highlightTool(btnText)
             onTextButtonClicked()
+        }
+
+        // set up ViewModel + repository
+        val repo = MediaStoreFileRepository(requireContext().applicationContext)
+        val factory = object : ViewModelProvider.Factory {
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                @Suppress("UNCHECKED_CAST")
+                return WhiteboardViewModel(repo) as T
+            }
+        }
+        val vm = ViewModelProvider(this, factory).get(WhiteboardViewModel::class.java)
+        whiteboardViewModel = vm
+
+        // observe one-time save events from ViewModel
+        lifecycleScope.launch {
+            vm.events.collect { ev ->
+                when (ev) {
+                    is SaveResult.PngSaved -> {
+                        Toast.makeText(requireContext(), "Saved PNG: ${ev.uri}", Toast.LENGTH_LONG).show()
+                    }
+                    is SaveResult.JsonSaved -> {
+                        Toast.makeText(requireContext(), "Saved JSON: ${ev.uri}", Toast.LENGTH_LONG).show()
+                    }
+                    is SaveResult.Error -> {
+                        Toast.makeText(requireContext(), "Save failed: ${ev.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
         }
 
         setHasOptionsMenu(true)
@@ -124,30 +165,6 @@ class WhiteboardFragment : Fragment() {
         val all = listOf(btnPen, btnBrush, btnEraser, btnShapes, btnText)
         all.forEach { it.isSelected = false }
         selected.isSelected = true
-    }
-
-    private fun showToast(msg: String = "Coming Soon") {
-        Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
-    }
-
-    private fun toggleMenu(menu: View, mainFab: FloatingActionButton) {
-        if (menuOpen) collapseMenu(menu, mainFab) else expandMenu(menu, mainFab)
-    }
-
-    private fun expandMenu(menu: View, mainFab: FloatingActionButton) {
-        menu.visibility = View.VISIBLE
-        menu.scaleX = 0f; menu.scaleY = 0f
-        menu.animate().scaleX(1f).scaleY(1f).setDuration(200)
-            .setInterpolator(DecelerateInterpolator()).start()
-        mainFab.animate().rotation(45f).setDuration(200).start()
-        menuOpen = true
-    }
-
-    private fun collapseMenu(menu: View, mainFab: FloatingActionButton) {
-        menu.animate().scaleX(0f).scaleY(0f).setDuration(180)
-            .setInterpolator(DecelerateInterpolator()).withEndAction { menu.visibility = View.GONE }.start()
-        mainFab.animate().rotation(0f).setDuration(180).start()
-        menuOpen = false
     }
 
     override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
@@ -222,119 +239,64 @@ class WhiteboardFragment : Fragment() {
             .show()
     }
 
+    /**
+     * Delegates saving to ViewModel (which uses repository).
+     */
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun saveToFile(filename: String, isPng: Boolean) {
-        viewLifecycleOwner.lifecycleScope.launchWhenStarted {
+        if (whiteboardView?.hasUndo() != true) {
+            Toast.makeText(requireContext(), "Nothing to save", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // keep workload off main thread; ViewModel will perform the IO
+        lifecycleScope.launch {
             if (isPng) {
-                val bitmap = withContext(Dispatchers.IO) {
+                val bitmap = withContext(Dispatchers.Default) {
                     createBitmapFromView(requireView().findViewById(R.id.whiteboardView))
                 }
-                val uri = saveBitmapToGalleryPng(bitmap, filename)
-                withContext(Dispatchers.Main) {
-                    if (uri != null) {
-                        Toast.makeText(requireContext(), "Saved PNG to Pictures/StudyBoard", Toast.LENGTH_LONG).show()
-                    } else {
-                        Toast.makeText(requireContext(), "PNG save failed", Toast.LENGTH_SHORT).show()
-                    }
-                }
+                whiteboardViewModel?.savePng(filename, bitmap)
             } else {
-                val json = whiteboardView?.exportDrawingAsJsonString(pretty = true, stepPx = 6f)
+                val json = withContext(Dispatchers.Default) {
+                    whiteboardView?.exportDrawingAsJsonString(pretty = true, stepPx = 6f)
+                }
                 if (json == null) {
                     Toast.makeText(requireContext(), "Failed to create JSON", Toast.LENGTH_SHORT).show()
-                    return@launchWhenStarted
+                    return@launch
                 }
-                val uri = saveJsonToDownloads(filename, json)
-                withContext(Dispatchers.Main) {
-                    if (uri != null) {
-                        Toast.makeText(requireContext(), "Saved JSON to Downloads/StudyBoard", Toast.LENGTH_LONG).show()
-                    } else {
-                        Toast.makeText(requireContext(), "JSON save failed", Toast.LENGTH_SHORT).show()
-                    }
-                }
+                whiteboardViewModel?.saveJson(filename, json)
             }
         }
     }
 
+    // create a bitmap snapshot of the view (call on background thread)
     private fun createBitmapFromView(view: View): Bitmap {
         val w = view.width.takeIf { it > 0 } ?: 1000
         val h = view.height.takeIf { it > 0 } ?: 1000
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
+        // optional: draw white background
         canvas.drawColor(android.graphics.Color.WHITE)
         view.draw(canvas)
         return bmp
     }
 
-    private suspend fun saveBitmapToGalleryPng(bitmap: Bitmap, displayName: String): android.net.Uri? {
-        return withContext(Dispatchers.IO) {
-            try {
-                val resolver = requireContext().contentResolver
-                val values = ContentValues().apply {
-                    put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
-                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-                    put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/StudyBoard")
-                    put(MediaStore.Images.Media.IS_PENDING, 1)
-                }
-                val collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                val uri = resolver.insert(collection, values) ?: return@withContext null
-                resolver.openOutputStream(uri).use { out ->
-                    if (out == null) throw Exception("Unable to open output stream")
-                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-                    out.flush()
-                }
-                values.clear()
-                values.put(MediaStore.Images.Media.IS_PENDING, 0)
-                resolver.update(uri, values, null, null)
-                uri
-            } catch (e: Exception) {
-                e.printStackTrace()
-                null
-            }
-        }
-    }
-
-    @RequiresApi(Build.VERSION_CODES.Q)
-    private suspend fun saveJsonToDownloads(filename: String, jsonString: String): android.net.Uri? {
-        return withContext(Dispatchers.IO) {
-            try {
-                val resolver = requireContext().contentResolver
-                val values = ContentValues().apply {
-                    put(MediaStore.Downloads.DISPLAY_NAME, filename)
-                    put(MediaStore.Downloads.MIME_TYPE, "application/json")
-                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/StudyBoard")
-                    put(MediaStore.Downloads.IS_PENDING, 1)
-                }
-                val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                val uri = resolver.insert(collection, values) ?: return@withContext null
-                resolver.openOutputStream(uri).use { out ->
-                    if (out == null) throw Exception("Unable to open output stream for $uri")
-                    out.write(jsonString.toByteArray(Charsets.UTF_8))
-                    out.flush()
-                }
-                values.clear()
-                values.put(MediaStore.Downloads.IS_PENDING, 0)
-                resolver.update(uri, values, null, null)
-                uri
-            } catch (e: Exception) {
-                e.printStackTrace()
-                null
-            }
-        }
-    }
-
-    // text add dialog
+    // when user clicks text button:
     private fun onTextButtonClicked() {
         val edit = EditText(requireContext()).apply {
             hint = "Type text to add"
             isSingleLine = false
             minLines = 1
+            setText("") // empty by default
         }
+
         AlertDialog.Builder(requireContext())
             .setTitle("Add text")
             .setView(edit)
             .setPositiveButton("OK") { dlg, _ ->
                 val typed = edit.text.toString().trim()
                 if (typed.isNotEmpty()) {
+                    // add at center (existing behavior)
                     whiteboardView?.addText(typed, null, null)
                 }
                 dlg.dismiss()
@@ -345,6 +307,8 @@ class WhiteboardFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        // clear listener/viewmodel ref
+        whiteboardViewModel = null
         whiteboardView = null
     }
 
@@ -353,3 +317,4 @@ class WhiteboardFragment : Fragment() {
         fun newInstance() = WhiteboardFragment().apply { arguments = Bundle() }
     }
 }
+
