@@ -1,7 +1,7 @@
 package com.starmaurya.whiteboard.views
 
+
 import android.content.Context
-import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -10,38 +10,29 @@ import android.graphics.PathMeasure
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
-import java.io.File
-import java.io.FileOutputStream
-import java.io.OutputStream
-import androidx.core.graphics.createBitmap
-import com.google.gson.Gson
+import android.view.ViewConfiguration
 import com.google.gson.GsonBuilder
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 
-// Simple container for a committed stroke
+// ---------- Models ----------
 data class Stroke(val path: Path, val paint: Paint)
-
-// add near top with your other data classes
 data class TextItem(val x: Float, val y: Float, val text: String, val paint: Paint)
+data class ShapeItem(var left: Float, var top: Float, var right: Float, var bottom: Float, val paint: Paint)
 
-// Serializable model for JSON
+// Serializable models for JSON export
 data class SerializablePoint(val x: Float, val y: Float)
-data class SerializableStroke(
-    val points: List<SerializablePoint>,
-    val color: Int,
-    val strokeWidth: Float
-)
-
+data class SerializableStroke(val points: List<SerializablePoint>, val color: Int, val strokeWidth: Float)
+data class SerializableText(val x: Float, val y: Float, val text: String, val color: Int, val textSize: Float)
+data class SerializableShape(val type: String, val left: Float, val top: Float, val right: Float, val bottom: Float, val color: Int, val strokeWidth: Float)
 data class BoardPayload(
     val strokes: List<SerializableStroke>,
+    val texts: List<SerializableText>,
+    val shapes: List<SerializableShape>,
     val width: Int,
     val height: Int
 )
-
-private val textItems = ArrayList<TextItem>()
-private val undoneTextItems = ArrayList<TextItem>()
-
-// choose a default text size (px). Convert dp to px if you want device independent sizing.
-private var defaultTextSizePx = 48f
 
 class WhiteboardView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
@@ -56,64 +47,192 @@ class WhiteboardView @JvmOverloads constructor(
         strokeCap = Paint.Cap.ROUND
     }
 
-    private var isEraserMode = false
+    // backup for restoring pen after eraser
+    private var backupPaint: Paint = Paint(drawPaint)
 
-    // list of committed strokes
+    // tool modes
+    enum class ToolMode { PEN, ERASER, SHAPE, TEXT }
+    private var currentTool: ToolMode = ToolMode.PEN
+
+    // --- state containers ---
     private val strokes = ArrayList<Stroke>()
-    private val undoneStrokes = ArrayList<Stroke>()  // undone strokes
-    // current in-progress path
+    private val undoneStrokes = ArrayList<Stroke>()
+
+    private val textItems = ArrayList<TextItem>()
+    private val undoneTextItems = ArrayList<TextItem>()
+
+    private val shapeItems = ArrayList<ShapeItem>()
+    private val undoneShapeItems = ArrayList<ShapeItem>()
+
+    // current in-progress path (for pen/eraser)
     private var currentPath = Path()
 
+    // transient in-progress shape (for drag-to-size)
+    private var currentShapeItem: ShapeItem? = null
+    private var isShapeDragging: Boolean = false
+    private var downX: Float = 0f
+    private var downY: Float = 0f
+    private val touchSlop: Int = ViewConfiguration.get(context).scaledTouchSlop
+
+    // defaults for shapes & text
+    private var defaultSquareSizeDp = 120f
+    private var defaultTextSizePx = 48f
+    private var enforcePerfectSquare = true
+
+    // ----------------- drawing -----------------
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        // draw all committed strokes
+        // 1) draw committed shapes first (so strokes/eraser can overlay them)
+        for (shape in shapeItems) {
+            canvas.drawRect(shape.left, shape.top, shape.right, shape.bottom, shape.paint)
+        }
+
+        // 2) draw all committed strokes (pen + erase strokes). Erase strokes will hide shapes now if drawn on top.
         for (s in strokes) {
             canvas.drawPath(s.path, s.paint)
         }
 
-        // draw committed text items
+        // 3) draw committed text items (text on top of strokes/shapes)
         for (t in textItems) {
             canvas.drawText(t.text, t.x, t.y, t.paint)
         }
 
-        // draw the in-progress path on top
+        // 4) draw the in-progress path on top (pen / eraser)
         canvas.drawPath(currentPath, drawPaint)
+
+        // 5) draw current in-progress shape (preview) on top of everything
+        currentShapeItem?.let { s ->
+            canvas.drawRect(s.left, s.top, s.right, s.bottom, s.paint)
+        }
     }
 
+
+    // ----------------- touch handling -----------------
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val x = event.x
         val y = event.y
 
-        when (event.action) {
+        when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                // start a new current path
-                currentPath = Path()
-                currentPath.moveTo(x, y)
-                // new stroke starts → redo stack should be cleared
-                undoneStrokes.clear()
-                return true
+                downX = x
+                downY = y
+                isShapeDragging = false
+
+                // If shape tool: start a transient shape (not committed yet)
+                if (currentTool == ToolMode.SHAPE) {
+                    val paintCopy = Paint(drawPaint).apply { style = Paint.Style.STROKE }
+                    currentShapeItem = ShapeItem(left = x, top = y, right = x, bottom = y, paint = paintCopy)
+                    // don't commit now, wait for ACTION_MOVE/ACTION_UP
+                    undoneShapeItems.clear()
+                    invalidate()
+                    return true
+                }
+
+                // If text tool: no automatic placement here — addText should be called from dialog
+                if (currentTool == ToolMode.TEXT) {
+                    // consume touch if you want (or return false to let fragment handle)
+                    return true
+                }
+
+                // PEN or ERASER: start path
+                if (currentTool == ToolMode.PEN || currentTool == ToolMode.ERASER) {
+                    currentPath = Path()
+                    currentPath.moveTo(x, y)
+                    undoneStrokes.clear()
+                    return true
+                }
             }
+
             MotionEvent.ACTION_MOVE -> {
-                currentPath.lineTo(x, y)
+                // shape live update (if started)
+                if (currentTool == ToolMode.SHAPE && currentShapeItem != null) {
+                    val dx = x - downX
+                    val dy = y - downY
+                    if (!isShapeDragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
+                        isShapeDragging = true
+                    }
+
+                    currentShapeItem?.let { s ->
+                        if (enforcePerfectSquare) {
+                            // compute side with sign preserved
+                            val side = max(abs(dx), abs(dy))
+                            val sx = if (dx < 0) -side else side
+                            val sy = if (dy < 0) -side else side
+                            s.right = s.left + sx
+                            s.bottom = s.top + sy
+                        } else {
+                            s.right = x
+                            s.bottom = y
+                        }
+                    }
+                    invalidate()
+                    return true
+                }
+
+                // PEN/ERASER drawing
+                if (currentTool == ToolMode.PEN || currentTool == ToolMode.ERASER) {
+                    currentPath.lineTo(x, y)
+                    invalidate()
+                    return true
+                }
             }
+
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                // commit: store a *copy* of the path and a copy of the paint
-                val committedPath = Path(currentPath)            // copy path
-                val paintCopy = Paint(drawPaint)                 // copy paint settings
-                strokes.add(Stroke(committedPath, paintCopy))    // push to list
-                currentPath.reset()                              // clear working path
+                // commit shape on UP (either tap => default size, or drag => sized)
+                if (currentTool == ToolMode.SHAPE && currentShapeItem != null) {
+                    val s = currentShapeItem!!
+                    if (!isShapeDragging) {
+                        // treat as tap — place default-size square centered at downX/downY
+                        val sidePx = dpToPx(defaultSquareSizeDp)
+                        val half = sidePx / 2f
+                        val left = downX - half
+                        val top = downY - half
+                        val right = downX + half
+                        val bottom = downY + half
+                        s.left = left; s.top = top; s.right = right; s.bottom = bottom
+                    } else {
+                        // normalize coords (left <= right, top <= bottom)
+                        val l = min(s.left, s.right)
+                        val r = max(s.left, s.right)
+                        val t = min(s.top, s.bottom)
+                        val b = max(s.top, s.bottom)
+                        s.left = l; s.top = t; s.right = r; s.bottom = b
+                    }
+
+                    // commit the shape and clear transient
+                    shapeItems.add(s)
+                    currentShapeItem = null
+                    isShapeDragging = false
+                    // clear redo stack for shapes
+                    undoneShapeItems.clear()
+                    invalidate()
+                    return true
+                }
+
+                // PEN/ERASER commit path on UP
+                if (currentTool == ToolMode.PEN || currentTool == ToolMode.ERASER) {
+                    val committedPath = Path(currentPath)
+                    val paintCopy = Paint(drawPaint)
+                    strokes.add(Stroke(committedPath, paintCopy))
+                    currentPath.reset()
+                    invalidate()
+                    return true
+                }
             }
         }
 
-        invalidate()
-        return true
+        return super.onTouchEvent(event)
     }
 
-    // Add this function inside your WhiteboardView class
+    // ---------- JSON export (strokes + texts + shapes) ----------
+    /**
+     * Export current board as a JSON string.
+     * Includes sampled stroke points and text + shape items.
+     */
     fun exportDrawingAsJsonString(pretty: Boolean = true, stepPx: Float = 5f): String? {
         return try {
-            // helper: sample Path into points at approx stepPx distance
+            // helper: sample a Path into points
             fun samplePathPoints(path: Path, step: Float = stepPx): List<SerializablePoint> {
                 val result = ArrayList<SerializablePoint>()
                 val pm = PathMeasure(path, false)
@@ -132,19 +251,32 @@ class WhiteboardView @JvmOverloads constructor(
                 return result
             }
 
-            // map your internal strokes -> serializable strokes
             val serialStrokes = strokes.map { s ->
                 val pts = samplePathPoints(s.path, stepPx)
                 SerializableStroke(points = pts, color = s.paint.color, strokeWidth = s.paint.strokeWidth)
             }
 
+            val serialTexts = textItems.map { t ->
+                SerializableText(x = t.x, y = t.y, text = t.text, color = t.paint.color, textSize = t.paint.textSize)
+            }
+
+            val serialShapes = shapeItems.map { s ->
+                SerializableShape(
+                    type = "SQUARE",
+                    left = s.left, top = s.top, right = s.right, bottom = s.bottom,
+                    color = s.paint.color, strokeWidth = s.paint.strokeWidth
+                )
+            }
+
             val payload = BoardPayload(
                 strokes = serialStrokes,
+                texts = serialTexts,
+                shapes = serialShapes,
                 width = measuredWidth.coerceAtLeast(1),
                 height = measuredHeight.coerceAtLeast(1)
             )
 
-            val gson: Gson = if (pretty) GsonBuilder().setPrettyPrinting().create() else Gson()
+            val gson = if (pretty) GsonBuilder().setPrettyPrinting().create() else GsonBuilder().create()
             gson.toJson(payload)
         } catch (e: Exception) {
             e.printStackTrace()
@@ -155,17 +287,13 @@ class WhiteboardView @JvmOverloads constructor(
     /**
      * Adds text to the canvas.
      * If x/y are null, text will be added approximately centered.
-     * The function commits the text (so it persists in saved JSON and PNG exports).
      */
     fun addText(text: String, x: Float? = null, y: Float? = null) {
         if (text.isBlank()) return
 
-        // decide coordinates: either provided or center
         val cx = x ?: (width / 2f)
-        // draw text baseline at vertical center (for simple placement we offset by text size)
         val cy = y ?: (height / 2f) + defaultTextSizePx / 2f
 
-        // create a paint copy for text (we keep color same as drawPaint by default)
         val p = Paint().apply {
             isAntiAlias = true
             style = Paint.Style.FILL
@@ -173,42 +301,34 @@ class WhiteboardView @JvmOverloads constructor(
             textSize = defaultTextSizePx
         }
 
-        // commit
         val t = TextItem(cx, cy, text, p)
         textItems.add(t)
-        // clear redo stack for text when new action occurs
         undoneTextItems.clear()
-
         invalidate()
     }
 
-    /** optional: set default text size (in px) */
-    fun setDefaultTextSizePx(px: Float) {
-        defaultTextSizePx = px
-    }
-
-    /** set default text color (will affect new text items) */
-    fun setDefaultTextColor(color: Int) {
-        drawPaint.color = color
-    }
-
-    /** undo: prefer strokes first (existing behavior), then text items */
+    // ----------------- undo / redo (strokes -> text -> shapes) -----------------
     fun undo() {
         if (strokes.isNotEmpty()) {
-            val stroke = strokes.removeAt(strokes.lastIndex)
-            undoneStrokes.add(stroke)
+            val s = strokes.removeAt(strokes.lastIndex)
+            undoneStrokes.add(s)
             invalidate()
             return
         }
-        // if no strokes, undo text
         if (textItems.isNotEmpty()) {
             val t = textItems.removeAt(textItems.lastIndex)
             undoneTextItems.add(t)
             invalidate()
+            return
+        }
+        if (shapeItems.isNotEmpty()) {
+            val sh = shapeItems.removeAt(shapeItems.lastIndex)
+            undoneShapeItems.add(sh)
+            invalidate()
+            return
         }
     }
 
-    /** redo: prefer text redo first (reverse of undo preference) */
     fun redo() {
         if (undoneTextItems.isNotEmpty()) {
             val t = undoneTextItems.removeAt(undoneTextItems.lastIndex)
@@ -220,33 +340,74 @@ class WhiteboardView @JvmOverloads constructor(
             val s = undoneStrokes.removeAt(undoneStrokes.lastIndex)
             strokes.add(s)
             invalidate()
+            return
+        }
+        if (undoneShapeItems.isNotEmpty()) {
+            val sh = undoneShapeItems.removeAt(undoneShapeItems.lastIndex)
+            shapeItems.add(sh)
+            invalidate()
+            return
         }
     }
 
-    /** Clear everything: strokes + text */
     fun clearBoard() {
         strokes.clear()
         undoneStrokes.clear()
         textItems.clear()
         undoneTextItems.clear()
+        shapeItems.clear()
+        undoneShapeItems.clear()
         currentPath.reset()
+        currentShapeItem = null
+        isShapeDragging = false
         invalidate()
     }
 
-    // 👉 New: toggle eraser mode
-    fun setEraser(enabled: Boolean) {
-        isEraserMode = enabled
-        if (enabled) {
-            drawPaint.color = Color.WHITE           // background color = white
-            drawPaint.strokeWidth = 30f             // eraser thicker
-        } else {
-            drawPaint.color = Color.BLACK           // back to black pen
-            drawPaint.strokeWidth = 8f
+    /**
+     * Switch tool centrally. This preserves/ restores pen settings when entering/exiting ERASER.
+     * Use this from Fragment to change modes.
+     */
+    fun setToolMode(mode: ToolMode) {
+        if (currentTool == mode) return
+
+        // leaving eraser -> restore backup
+        if (currentTool == ToolMode.ERASER && mode != ToolMode.ERASER) {
+            drawPaint.color = backupPaint.color
+            drawPaint.strokeWidth = backupPaint.strokeWidth
+            drawPaint.style = backupPaint.style
+            drawPaint.isAntiAlias = backupPaint.isAntiAlias
+            drawPaint.strokeJoin = backupPaint.strokeJoin
+            drawPaint.strokeCap = backupPaint.strokeCap
         }
+
+        // entering eraser -> backup current pen and set eraser paint
+        if (mode == ToolMode.ERASER) {
+            backupPaint = Paint(drawPaint)
+            drawPaint.color = Color.WHITE
+            drawPaint.strokeWidth = (backupPaint.strokeWidth * 3f).coerceAtLeast(24f)
+            drawPaint.style = Paint.Style.STROKE
+        }
+
+        currentTool = mode
+
+        // clear transient drawing state (prevents stale paths/previews)
+        currentPath.reset()
+        currentShapeItem = null
+        isShapeDragging = false
+
+        invalidate()
+    }
+
+    fun hasUndo(): Boolean {
+        return strokes.isNotEmpty() || textItems.isNotEmpty() || shapeItems.isNotEmpty()
+    }
+
+    fun hasRedo(): Boolean {
+        return undoneStrokes.isNotEmpty() || undoneTextItems.isNotEmpty() || undoneShapeItems.isNotEmpty()
+    }
+
+    private fun dpToPx(dp: Float): Float {
+        return dp * resources.displayMetrics.density
     }
 }
 
-//<a href="https://www.flaticon.com/free-icons/undo" title="undo icons">Undo icons created by Freepik - Flaticon</a>
-//<a href="https://www.flaticon.com/free-icons/previous" title="previous icons">Previous icons created by Any Icon - Flaticon</a>
-//<a href="https://www.flaticon.com/free-icons/save" title="save icons">Save icons created by Bharat Icons - Flaticon</a>
-//<a href="https://www.flaticon.com/free-icons/eraser" title="eraser icons">Eraser icons created by Freepik - Flaticon</a>

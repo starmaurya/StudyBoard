@@ -7,7 +7,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
-import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuInflater
@@ -23,28 +22,33 @@ import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
+import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.starmaurya.whiteboard.R
 import com.starmaurya.whiteboard.views.WhiteboardView
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
 
 class WhiteboardFragment : Fragment() {
 
     private var whiteboardView: WhiteboardView? = null
     private var menuOpen = false
 
+    private lateinit var btnPen: ImageButton
+    private lateinit var btnBrush: ImageButton
+    private lateinit var btnEraser: ImageButton
+    private lateinit var btnShapes: ImageButton
+    private lateinit var btnText: ImageButton
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        // Inflate the fragment layout that contains the custom WhiteboardView
         val root = inflater.inflate(R.layout.fragment_whiteboard, container, false)
         whiteboardView = root.findViewById(R.id.whiteboardView)
         return root
@@ -53,60 +57,77 @@ class WhiteboardFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        val btnPen  = view.findViewById<ImageButton>(R.id.btn_pen)
-        val btnBrush  = view.findViewById<ImageButton>(R.id.btn_brush)
-        val btnEraser  = view.findViewById<ImageButton>(R.id.btn_eraser)
-        val btnShapes  = view.findViewById<ImageButton>(R.id.btn_shapes)
-        val btnText  = view.findViewById<ImageButton>(R.id.btn_text)
-
+        // toolbar
         val toolbar = view.findViewById<Toolbar>(R.id.whiteboard_toolbar)
         (activity as? AppCompatActivity)?.setSupportActionBar(toolbar)
         (activity as? AppCompatActivity)?.supportActionBar?.setDisplayHomeAsUpEnabled(true)
         (activity as? AppCompatActivity)?.supportActionBar?.setDisplayShowTitleEnabled(false)
-        // The homeAsUpIndicator is now set in the XML layout (app:navigationIcon)
 
-        val undoButton = view.findViewById<ImageButton>(R.id.action_undo_centered)
-        undoButton.setOnClickListener {
-            whiteboardView?.undo()
+        // undo/redo
+        view.findViewById<ImageButton>(R.id.action_undo_centered).setOnClickListener {
+            if (whiteboardView?.hasUndo() == true) {
+                whiteboardView?.undo()
+            } else {
+                Toast.makeText(requireContext(), "No drawings to undo", Toast.LENGTH_SHORT).show()
+            }
+        }
+        view.findViewById<ImageButton>(R.id.action_redo_centered).setOnClickListener {
+            if (whiteboardView?.hasRedo() == true) {
+                whiteboardView?.redo()
+            } else {
+                Toast.makeText(requireContext(), "Nothing to redo", Toast.LENGTH_SHORT).show()
+            }
         }
 
-        val redoButton = view.findViewById<ImageButton>(R.id.action_redo_centered)
-        redoButton.setOnClickListener {
-            whiteboardView?.redo()
-        }
+        // bottom tools
+        btnPen = view.findViewById(R.id.btn_pen)
+        btnBrush = view.findViewById(R.id.btn_brush)
+        btnEraser = view.findViewById(R.id.btn_eraser)
+        btnShapes = view.findViewById(R.id.btn_shapes)
+        btnText = view.findViewById(R.id.btn_text)
+
+        // default mode = PEN (and highlight)
+        whiteboardView?.setToolMode(WhiteboardView.ToolMode.PEN)
+        highlightTool(btnPen)
 
         btnPen.setOnClickListener {
-            showToast()
+            whiteboardView?.setToolMode(WhiteboardView.ToolMode.PEN)
+            highlightTool(btnPen)
         }
 
         btnBrush.setOnClickListener {
             showToast()
         }
 
+        btnEraser.setOnClickListener {
+            whiteboardView?.setToolMode(WhiteboardView.ToolMode.ERASER)
+            highlightTool(btnEraser)
+        }
+
         btnShapes.setOnClickListener {
-            showToast()
+            // keep highlight as current tool (don't switch)
+            whiteboardView?.setToolMode(WhiteboardView.ToolMode.SHAPE)
+            highlightTool(btnBrush)
         }
 
         btnText.setOnClickListener {
+            whiteboardView?.setToolMode(WhiteboardView.ToolMode.TEXT)
+            highlightTool(btnText)
             onTextButtonClicked()
         }
 
-        var isEraserMode = false
-        btnEraser.setOnClickListener {
-            if (!isEraserMode) {
-                isEraserMode = true
-                whiteboardView?.setEraser(true)
-            } else {
-                isEraserMode = false
-                whiteboardView?.setEraser(false)
-            }
-        }
-
-        setHasOptionsMenu(true) // For the 'save' menu item
+        setHasOptionsMenu(true)
     }
 
-    private fun showToast() {
-        Toast.makeText(requireContext(), "Coming Soon", Toast.LENGTH_SHORT).show()
+    /** Toggle a green border using state_selected (background selector) */
+    private fun highlightTool(selected: ImageButton) {
+        val all = listOf(btnPen, btnBrush, btnEraser, btnShapes, btnText)
+        all.forEach { it.isSelected = false }
+        selected.isSelected = true
+    }
+
+    private fun showToast(msg: String = "Coming Soon") {
+        Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
     }
 
     private fun toggleMenu(menu: View, mainFab: FloatingActionButton) {
@@ -130,7 +151,7 @@ class WhiteboardFragment : Fragment() {
     }
 
     override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
-        inflater.inflate(R.menu.whiteboard_toolbar_menu, menu) // This menu now only contains 'save'
+        inflater.inflate(R.menu.whiteboard_toolbar_menu, menu)
         super.onCreateOptionsMenu(menu, inflater)
     }
 
@@ -142,7 +163,11 @@ class WhiteboardFragment : Fragment() {
                 true
             }
             R.id.action_save -> {
-                showSaveChoiceDialog()
+                if (whiteboardView?.hasUndo() == true) {
+                    showSaveChoiceDialog()
+                } else {
+                    Toast.makeText(requireContext(), "Nothing to save", Toast.LENGTH_SHORT).show()
+                }
                 true
             }
             else -> super.onOptionsItemSelected(item)
@@ -156,8 +181,8 @@ class WhiteboardFragment : Fragment() {
             .setTitle("Save drawing")
             .setItems(options) { dialog, which ->
                 when (which) {
-                    0 -> promptFileNameAndSave(isPng = true)   // PNG chosen
-                    1 -> promptFileNameAndSave(isPng = false)  // JSON chosen
+                    0 -> promptFileNameAndSave(isPng = true)
+                    1 -> promptFileNameAndSave(isPng = false)
                 }
                 dialog.dismiss()
             }
@@ -182,9 +207,8 @@ class WhiteboardFragment : Fragment() {
             .setPositiveButton("Save") { dlg, _ ->
                 val filenameInput = edit.text.toString().trim()
                 if (filenameInput.isEmpty()) {
-                    Toast.makeText(requireContext(), "Please enter a file name", android.widget.Toast.LENGTH_SHORT).show()
+                    Toast.makeText(requireContext(), "Please enter a file name", Toast.LENGTH_SHORT).show()
                 } else {
-                    // ensure extensions
                     val finalName = if (isPng) {
                         if (filenameInput.endsWith(".png", ignoreCase = true)) filenameInput else "$filenameInput.png"
                     } else {
@@ -200,78 +224,47 @@ class WhiteboardFragment : Fragment() {
 
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun saveToFile(filename: String, isPng: Boolean) {
-        lifecycleScope.launchWhenStarted {
+        viewLifecycleOwner.lifecycleScope.launchWhenStarted {
             if (isPng) {
-                // create bitmap snapshot on IO thread
                 val bitmap = withContext(Dispatchers.IO) {
                     createBitmapFromView(requireView().findViewById(R.id.whiteboardView))
                 }
-                // save via MediaStore
                 val uri = saveBitmapToGalleryPng(bitmap, filename)
                 withContext(Dispatchers.Main) {
                     if (uri != null) {
-                        Toast.makeText(requireContext(), "Saved PNG to Pictures/StudyBoard", android.widget.Toast.LENGTH_LONG).show()
+                        Toast.makeText(requireContext(), "Saved PNG to Pictures/StudyBoard", Toast.LENGTH_LONG).show()
                     } else {
-                        Toast.makeText(requireContext(), "PNG save failed", android.widget.Toast.LENGTH_SHORT).show()
+                        Toast.makeText(requireContext(), "PNG save failed", Toast.LENGTH_SHORT).show()
                     }
                 }
             } else {
-                // JSON: get JSON string from WhiteboardView
                 val json = whiteboardView?.exportDrawingAsJsonString(pretty = true, stepPx = 6f)
                 if (json == null) {
-                    Toast.makeText(requireContext(), "Failed to create JSON", android.widget.Toast.LENGTH_SHORT).show()
+                    Toast.makeText(requireContext(), "Failed to create JSON", Toast.LENGTH_SHORT).show()
                     return@launchWhenStarted
                 }
-                // save via MediaStore Downloads
                 val uri = saveJsonToDownloads(filename, json)
                 withContext(Dispatchers.Main) {
                     if (uri != null) {
-                        Toast.makeText(requireContext(), "Saved JSON to Downloads/StudyBoard", android.widget.Toast.LENGTH_LONG).show()
+                        Toast.makeText(requireContext(), "Saved JSON to Downloads/StudyBoard", Toast.LENGTH_LONG).show()
                     } else {
-                        Toast.makeText(requireContext(), "JSON save failed", android.widget.Toast.LENGTH_SHORT).show()
+                        Toast.makeText(requireContext(), "JSON save failed", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
         }
     }
 
-    // when user clicks text button:
-    private fun onTextButtonClicked() {
-        val edit = EditText(requireContext()).apply {
-            hint = "Type text to add"
-            isSingleLine = false
-            minLines = 1
-            setText("") // empty by default
-        }
-
-        AlertDialog.Builder(requireContext())
-            .setTitle("Add text")
-            .setView(edit)
-            .setPositiveButton("OK") { dlg, _ ->
-                val typed = edit.text.toString().trim()
-                if (typed.isNotEmpty()) {
-                    // we add at center — or you can detect a tap location and pass coords
-                    whiteboardView?.addText(typed, null, null)
-                }
-                dlg.dismiss()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    // create a bitmap snapshot of the view (call on background thread)
     private fun createBitmapFromView(view: View): Bitmap {
         val w = view.width.takeIf { it > 0 } ?: 1000
         val h = view.height.takeIf { it > 0 } ?: 1000
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
-        // optional: draw white background
         canvas.drawColor(android.graphics.Color.WHITE)
         view.draw(canvas)
         return bmp
     }
 
-    /** Save bitmap as PNG into Pictures/StudyBoard via MediaStore. Returns Uri or null */
     private suspend fun saveBitmapToGalleryPng(bitmap: Bitmap, displayName: String): android.net.Uri? {
         return withContext(Dispatchers.IO) {
             try {
@@ -292,15 +285,14 @@ class WhiteboardFragment : Fragment() {
                 values.clear()
                 values.put(MediaStore.Images.Media.IS_PENDING, 0)
                 resolver.update(uri, values, null, null)
-                return@withContext uri
+                uri
             } catch (e: Exception) {
                 e.printStackTrace()
-                return@withContext null
+                null
             }
         }
     }
 
-    /** Save JSON text into Downloads/StudyBoard via MediaStore. Returns Uri or null */
     @RequiresApi(Build.VERSION_CODES.Q)
     private suspend fun saveJsonToDownloads(filename: String, jsonString: String): android.net.Uri? {
         return withContext(Dispatchers.IO) {
@@ -322,12 +314,33 @@ class WhiteboardFragment : Fragment() {
                 values.clear()
                 values.put(MediaStore.Downloads.IS_PENDING, 0)
                 resolver.update(uri, values, null, null)
-                return@withContext uri
+                uri
             } catch (e: Exception) {
                 e.printStackTrace()
-                return@withContext null
+                null
             }
         }
+    }
+
+    // text add dialog
+    private fun onTextButtonClicked() {
+        val edit = EditText(requireContext()).apply {
+            hint = "Type text to add"
+            isSingleLine = false
+            minLines = 1
+        }
+        AlertDialog.Builder(requireContext())
+            .setTitle("Add text")
+            .setView(edit)
+            .setPositiveButton("OK") { dlg, _ ->
+                val typed = edit.text.toString().trim()
+                if (typed.isNotEmpty()) {
+                    whiteboardView?.addText(typed, null, null)
+                }
+                dlg.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     override fun onDestroyView() {
@@ -337,10 +350,6 @@ class WhiteboardFragment : Fragment() {
 
     companion object {
         @JvmStatic
-        fun newInstance() =
-            WhiteboardFragment().apply {
-                arguments = Bundle().apply {
-                }
-            }
+        fun newInstance() = WhiteboardFragment().apply { arguments = Bundle() }
     }
 }

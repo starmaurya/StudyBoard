@@ -60,8 +60,10 @@
     <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/menu_layout"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="70dp"
         android:orientation="horizontal"
+        android:layout_alignParentStart="true"
+        android:layout_alignParentEnd="true"
         android:layout_alignParentBottom="true"
         android:gravity="center"
         android:background="#edf4fb">
@@ -69,9 +71,9 @@
         <!-- Example tool button -->
         <ImageButton
             android:id="@+id/btn_pen"
-            android:layout_width="81dp"
-            android:layout_height="72dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:background="@drawable/border_bg"
             android:contentDescription="Pen"
             android:scaleType="centerInside"
             android:src="@drawable/pen"
@@ -84,8 +86,8 @@
         <ImageButton
             android:id="@+id/btn_brush"
             android:layout_width="81dp"
-            android:layout_height="72dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:layout_height="0dp"
+            android:background="@drawable/border_bg"
             android:contentDescription="Brush"
             android:scaleType="center"
             android:src="@drawable/brush"
@@ -99,8 +101,8 @@
         <ImageButton
             android:id="@+id/btn_eraser"
             android:layout_width="81dp"
-            android:layout_height="72dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:layout_height="0dp"
+            android:background="@drawable/border_bg"
             android:contentDescription="Eraser"
             android:src="@drawable/eraser"
             app:layout_constraintBottom_toBottomOf="parent"
@@ -112,7 +114,7 @@
         <ImageButton
             android:id="@+id/btn_shapes"
             android:layout_width="81dp"
-            android:layout_height="72dp"
+            android:layout_height="0dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Undo"
             android:src="@drawable/shapes"
@@ -126,7 +128,7 @@
             android:id="@+id/btn_text"
             android:layout_width="81dp"
             android:layout_height="72dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:background="@drawable/border_bg"
             android:contentDescription="Redo"
             android:src="@drawable/text"
             app:layout_constraintBottom_toBottomOf="parent"
