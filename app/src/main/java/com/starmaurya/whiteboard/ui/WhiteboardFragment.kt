@@ -1,18 +1,11 @@
 package com.starmaurya.whiteboard.ui
 
-
 import android.app.AlertDialog
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Build
 import android.os.Bundle
-import android.view.LayoutInflater
-import android.view.Menu
-import android.view.MenuInflater
-import android.view.MenuItem
-import android.view.View
-import android.view.ViewGroup
-import android.view.animation.DecelerateInterpolator
+import android.view.*
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -24,8 +17,11 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
-import com.google.android.material.floatingactionbutton.FloatingActionButton
+import androidx.lifecycle.repeatOnLifecycle
 import com.starmaurya.whiteboard.R
+import com.starmaurya.whiteboard.models.SerializableShape
+import com.starmaurya.whiteboard.models.SerializableStroke
+import com.starmaurya.whiteboard.models.SerializableText
 import com.starmaurya.whiteboard.repository.MediaStoreFileRepository
 import com.starmaurya.whiteboard.viewmodels.SaveResult
 import com.starmaurya.whiteboard.viewmodels.WhiteboardViewModel
@@ -40,7 +36,7 @@ import java.util.Locale
 class WhiteboardFragment : Fragment() {
 
     private var whiteboardView: WhiteboardView? = null
-    private var menuOpen = false
+    private var whiteboardViewModel: WhiteboardViewModel? = null
 
     private lateinit var btnPen: ImageButton
     private lateinit var btnBrush: ImageButton
@@ -48,88 +44,46 @@ class WhiteboardFragment : Fragment() {
     private lateinit var btnShapes: ImageButton
     private lateinit var btnText: ImageButton
 
-    // ViewModel
-    private var whiteboardViewModel: WhiteboardViewModel? = null
-
-    override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View? {
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
         val root = inflater.inflate(R.layout.fragment_whiteboard, container, false)
         whiteboardView = root.findViewById(R.id.whiteboardView)
+
+        // IMPORTANT: set a lightweight listener that forwards committed items to the ViewModel.
+        // ViewModel instance will be created in onViewCreated — listener will safely call vm if available.
+        whiteboardView?.setBoardActionListener(object : WhiteboardView.BoardActionListener {
+            override fun onStrokeCommitted(stroke: SerializableStroke) {
+                whiteboardViewModel?.addStroke(stroke)
+            }
+
+            override fun onShapeCommitted(shape: SerializableShape) {
+                whiteboardViewModel?.addShape(shape)
+            }
+
+            override fun onTextCommitted(text: SerializableText) {
+                whiteboardViewModel?.addText(text)
+            }
+        })
+
         return root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // setup toolbar
+        // toolbar
         val toolbar = view.findViewById<Toolbar>(R.id.whiteboard_toolbar)
         (activity as? AppCompatActivity)?.setSupportActionBar(toolbar)
         (activity as? AppCompatActivity)?.supportActionBar?.setDisplayHomeAsUpEnabled(true)
         (activity as? AppCompatActivity)?.supportActionBar?.setDisplayShowTitleEnabled(false)
 
-        // undo / redo
-        val undoButton = view.findViewById<ImageButton>(R.id.action_undo_centered)
-        val redoButton = view.findViewById<ImageButton>(R.id.action_redo_centered)
-
-        undoButton.setOnClickListener {
-            if (whiteboardView?.hasUndo() == true) {
-                whiteboardView?.undo()
-            } else {
-                Toast.makeText(requireContext(), "No drawings to undo", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        redoButton.setOnClickListener {
-            if (whiteboardView?.hasRedo() == true) {
-                whiteboardView?.redo()
-            } else {
-                Toast.makeText(requireContext(), "Nothing to redo", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        // bottom tool buttons
+        // find buttons
         btnPen = view.findViewById(R.id.btn_pen)
         btnBrush = view.findViewById(R.id.btn_brush)
         btnEraser = view.findViewById(R.id.btn_eraser)
         btnShapes = view.findViewById(R.id.btn_shapes)
         btnText = view.findViewById(R.id.btn_text)
 
-        // default tool
-        whiteboardView?.setToolMode(WhiteboardView.ToolMode.PEN)
-        highlightTool(btnPen)
-
-        btnPen.setOnClickListener {
-            whiteboardView?.setToolMode(WhiteboardView.ToolMode.PEN)
-            highlightTool(btnPen)
-            Toast.makeText(requireContext(), "Pen", Toast.LENGTH_SHORT).show()
-        }
-
-        btnBrush.setOnClickListener {
-            whiteboardView?.setToolMode(WhiteboardView.ToolMode.SHAPE)
-            highlightTool(btnBrush)
-            Toast.makeText(requireContext(), "Square (drag to size)", Toast.LENGTH_SHORT).show()
-        }
-
-        btnEraser.setOnClickListener {
-            whiteboardView?.setToolMode(WhiteboardView.ToolMode.ERASER)
-            highlightTool(btnEraser)
-            Toast.makeText(requireContext(), "Eraser", Toast.LENGTH_SHORT).show()
-        }
-
-        btnShapes.setOnClickListener {
-            // placeholder: open shapes picker later
-            Toast.makeText(requireContext(), "Shapes panel coming soon", Toast.LENGTH_SHORT).show()
-        }
-
-        btnText.setOnClickListener {
-            whiteboardView?.setToolMode(WhiteboardView.ToolMode.TEXT)
-            highlightTool(btnText)
-            onTextButtonClicked()
-        }
-
-        // set up ViewModel + repository
+        // create VM (phase 2 repository wiring)
         val repo = MediaStoreFileRepository(requireContext().applicationContext)
         val factory = object : ViewModelProvider.Factory {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -140,27 +94,73 @@ class WhiteboardFragment : Fragment() {
         val vm = ViewModelProvider(this, factory).get(WhiteboardViewModel::class.java)
         whiteboardViewModel = vm
 
-        // observe one-time save events from ViewModel
-        lifecycleScope.launch {
-            vm.events.collect { ev ->
-                when (ev) {
-                    is SaveResult.PngSaved -> {
-                        Toast.makeText(requireContext(), "Saved PNG: ${ev.uri}", Toast.LENGTH_LONG).show()
-                    }
-                    is SaveResult.JsonSaved -> {
-                        Toast.makeText(requireContext(), "Saved JSON: ${ev.uri}", Toast.LENGTH_LONG).show()
-                    }
-                    is SaveResult.Error -> {
-                        Toast.makeText(requireContext(), "Save failed: ${ev.message}", Toast.LENGTH_SHORT).show()
+        // Observe board state -> render in view
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                vm.boardState.collect { payload ->
+                    whiteboardView?.renderBoard(payload)
+                }
+            }
+        }
+
+        // Observe save events
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                vm.events.collect { ev ->
+                    when (ev) {
+                        is SaveResult.PngSaved -> {
+                            Toast.makeText(requireContext(), "Saved PNG: ${ev.uri}", Toast.LENGTH_LONG).show()
+                        }
+                        is SaveResult.JsonSaved -> {
+                            Toast.makeText(requireContext(), "Saved JSON: ${ev.uri}", Toast.LENGTH_LONG).show()
+                        }
+                        is SaveResult.Error -> {
+                            Toast.makeText(requireContext(), "Save failed: ${ev.message}", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
         }
 
+        // DEFAULT TOOL & UI wiring
+        whiteboardView?.setToolMode(WhiteboardView.ToolMode.PEN)
+        highlightTool(btnPen)
+
+        btnPen.setOnClickListener {
+            whiteboardView?.setToolMode(WhiteboardView.ToolMode.PEN)
+            highlightTool(btnPen)
+        }
+        btnBrush.setOnClickListener {
+            Toast.makeText(requireContext(), "coming soon", Toast.LENGTH_SHORT).show()
+        }
+        btnEraser.setOnClickListener {
+            whiteboardView?.setToolMode(WhiteboardView.ToolMode.ERASER)
+            highlightTool(btnEraser)
+        }
+        btnShapes.setOnClickListener {
+            whiteboardView?.setToolMode(WhiteboardView.ToolMode.SHAPE)
+            highlightTool(btnShapes)
+        }
+        btnText.setOnClickListener {
+            whiteboardView?.setToolMode(WhiteboardView.ToolMode.TEXT)
+            highlightTool(btnText)
+            onTextButtonClicked()
+        }
+
+        // Undo / Redo via ViewModel
+        val undoBtn = view.findViewById<ImageButton>(R.id.action_undo_centered)
+        val redoBtn = view.findViewById<ImageButton>(R.id.action_redo_centered)
+        undoBtn.setOnClickListener {
+            if (vm.hasUndo()) vm.undo() else Toast.makeText(requireContext(), "No drawings to undo", Toast.LENGTH_SHORT).show()
+        }
+        redoBtn.setOnClickListener {
+            if (vm.hasRedo()) vm.redo() else Toast.makeText(requireContext(), "Nothing to redo", Toast.LENGTH_SHORT).show()
+        }
+
         setHasOptionsMenu(true)
     }
 
-    /** Toggle a green border using state_selected (background selector) */
+    // selection highlight (uses background selector with stroke)
     private fun highlightTool(selected: ImageButton) {
         val all = listOf(btnPen, btnBrush, btnEraser, btnShapes, btnText)
         all.forEach { it.isSelected = false }
@@ -180,11 +180,16 @@ class WhiteboardFragment : Fragment() {
                 true
             }
             R.id.action_save -> {
-                if (whiteboardView?.hasUndo() == true) {
+                // don't open save dialog if board empty
+                if (whiteboardViewModel?.boardState?.value?.let { payload ->
+                        payload.strokes.isNotEmpty() || payload.texts.isNotEmpty() || payload.shapes.isNotEmpty()
+                    } == true
+                ) {
                     showSaveChoiceDialog()
                 } else {
                     Toast.makeText(requireContext(), "Nothing to save", Toast.LENGTH_SHORT).show()
                 }
+
                 true
             }
             else -> super.onOptionsItemSelected(item)
@@ -212,10 +217,7 @@ class WhiteboardFragment : Fragment() {
         val edit = EditText(requireContext()).apply {
             val time = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
             setText(if (isPng) "studyboard_$time.png" else "studyboard_$time.json")
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }
 
         AlertDialog.Builder(requireContext())
@@ -241,63 +243,45 @@ class WhiteboardFragment : Fragment() {
 
     /**
      * Delegates saving to ViewModel (which uses repository).
+     * For PNG we snapshot the view into a bitmap.
      */
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun saveToFile(filename: String, isPng: Boolean) {
-        if (whiteboardView?.hasUndo() != true) {
-            Toast.makeText(requireContext(), "Nothing to save", Toast.LENGTH_SHORT).show()
-            return
-        }
+        val vm = whiteboardViewModel ?: return
 
-        // keep workload off main thread; ViewModel will perform the IO
         lifecycleScope.launch {
             if (isPng) {
                 val bitmap = withContext(Dispatchers.Default) {
                     createBitmapFromView(requireView().findViewById(R.id.whiteboardView))
                 }
-                whiteboardViewModel?.savePng(filename, bitmap)
+                vm.savePng(filename, bitmap)
             } else {
                 val json = withContext(Dispatchers.Default) {
-                    whiteboardView?.exportDrawingAsJsonString(pretty = true, stepPx = 6f)
+                    vm.exportDrawingAsJsonString(pretty = true)
                 }
                 if (json == null) {
                     Toast.makeText(requireContext(), "Failed to create JSON", Toast.LENGTH_SHORT).show()
                     return@launch
                 }
-                whiteboardViewModel?.saveJson(filename, json)
+                vm.saveJson(filename, json)
             }
         }
     }
 
-    // create a bitmap snapshot of the view (call on background thread)
-    private fun createBitmapFromView(view: View): Bitmap {
-        val w = view.width.takeIf { it > 0 } ?: 1000
-        val h = view.height.takeIf { it > 0 } ?: 1000
-        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bmp)
-        // optional: draw white background
-        canvas.drawColor(android.graphics.Color.WHITE)
-        view.draw(canvas)
-        return bmp
-    }
-
-    // when user clicks text button:
+    // text add dialog -> adds SerializableText to VM
     private fun onTextButtonClicked() {
-        val edit = EditText(requireContext()).apply {
-            hint = "Type text to add"
-            isSingleLine = false
-            minLines = 1
-            setText("") // empty by default
-        }
-
+        val edit = EditText(requireContext()).apply { hint = "Type text to add"; isSingleLine = false; minLines = 1 }
         AlertDialog.Builder(requireContext())
             .setTitle("Add text")
             .setView(edit)
             .setPositiveButton("OK") { dlg, _ ->
                 val typed = edit.text.toString().trim()
                 if (typed.isNotEmpty()) {
-                    // add at center (existing behavior)
-                    whiteboardView?.addText(typed, null, null)
+                    val view = view ?: return@setPositiveButton
+                    val centerX = (whiteboardView?.width ?: view.width) / 2f
+                    val centerY = (whiteboardView?.height ?: view.height) / 2f + 48f
+                    val t = SerializableText(centerX, centerY, typed, color = 0xFF000000.toInt(), textSize = 48f)
+                    whiteboardViewModel?.addText(t)
                 }
                 dlg.dismiss()
             }
@@ -305,9 +289,21 @@ class WhiteboardFragment : Fragment() {
             .show()
     }
 
+    // snapshot the view into a bitmap (background thread)
+    private fun createBitmapFromView(view: View): Bitmap {
+        val w = view.width.takeIf { it > 0 } ?: 1000
+        val h = view.height.takeIf { it > 0 } ?: 1000
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        canvas.drawColor(android.graphics.Color.WHITE)
+        view.draw(canvas)
+        return bmp
+    }
+
     override fun onDestroyView() {
         super.onDestroyView()
-        // clear listener/viewmodel ref
+        // clean up
+        whiteboardView?.setBoardActionListener(null)
         whiteboardViewModel = null
         whiteboardView = null
     }
@@ -317,4 +313,3 @@ class WhiteboardFragment : Fragment() {
         fun newInstance() = WhiteboardFragment().apply { arguments = Bundle() }
     }
 }
-
