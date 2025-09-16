@@ -115,7 +115,7 @@
             android:id="@+id/btn_shapes"
             android:layout_width="81dp"
             android:layout_height="0dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:background="@drawable/border_bg"
             android:contentDescription="Undo"
             android:src="@drawable/shapes"
             app:layout_constraintBottom_toBottomOf="parent"
