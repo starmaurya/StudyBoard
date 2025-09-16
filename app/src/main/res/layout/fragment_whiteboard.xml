@@ -85,7 +85,7 @@
 
         <ImageButton
             android:id="@+id/btn_brush"
-            android:layout_width="81dp"
+            android:layout_width="0dp"
             android:layout_height="0dp"
             android:background="@drawable/border_bg"
             android:contentDescription="Brush"
@@ -100,7 +100,7 @@
         <!-- Eraser -->
         <ImageButton
             android:id="@+id/btn_eraser"
-            android:layout_width="81dp"
+            android:layout_width="0dp"
             android:layout_height="0dp"
             android:background="@drawable/border_bg"
             android:contentDescription="Eraser"
@@ -113,7 +113,7 @@
 
         <ImageButton
             android:id="@+id/btn_shapes"
-            android:layout_width="81dp"
+            android:layout_width="0dp"
             android:layout_height="0dp"
             android:background="@drawable/border_bg"
             android:contentDescription="Undo"
@@ -126,7 +126,7 @@
 
         <ImageButton
             android:id="@+id/btn_text"
-            android:layout_width="81dp"
+            android:layout_width="0dp"
             android:layout_height="72dp"
             android:background="@drawable/border_bg"
             android:contentDescription="Redo"
