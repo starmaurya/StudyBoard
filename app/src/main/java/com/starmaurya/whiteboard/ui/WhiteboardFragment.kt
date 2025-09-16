@@ -111,8 +111,38 @@ class WhiteboardFragment : Fragment() {
                     return WhiteboardViewModel(repo) as T
                 }
             }
-            val vm = ViewModelProvider(this, factory).get(WhiteboardViewModel::class.java)
+            val vm = ViewModelProvider(this, factory)[WhiteboardViewModel::class.java]
             whiteboardViewModel = vm
+
+            val onBackPressedCallback = object : androidx.activity.OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    // Check if the board has any content
+                    val hasChanges = vm.boardState.value.let { payload ->
+                        payload.strokes.isNotEmpty() || payload.texts.isNotEmpty() || payload.shapes.isNotEmpty()
+                    }
+
+                    if (hasChanges) {
+                        // If there are changes, show a confirmation dialog
+                        AlertDialog.Builder(requireContext())
+                            .setTitle("Exit Whiteboard?")
+                            .setMessage("Your drawing is not saved. Are you sure you want to exit?")
+                            .setPositiveButton("Exit") { _, _ ->
+                                // User confirmed. Disable this callback and proceed with the back press.
+                                isEnabled = false
+                                activity?.onBackPressedDispatcher?.onBackPressed()
+                            }
+                            .setNegativeButton("Cancel", null) // Do nothing, just dismiss the dialog
+                            .show()
+                    } else {
+                        // No changes, so just exit without a dialog.
+                        isEnabled = false
+                        activity?.onBackPressedDispatcher?.onBackPressed()
+                    }
+                }
+            }
+            // Add the callback to the dispatcher, tied to the fragment's view lifecycle
+            requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, onBackPressedCallback)
+
 
             viewLifecycleOwner.lifecycleScope.launch {
                 viewLifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
